@@ -53,6 +53,22 @@ ArrayList是的初始容量为10，在向ArrayList中添加元素时，如果元
 2. 新建一个大容量的数组，并将原数组中的元素全部复制到新数组中，再将新元素添加到新数组末尾。
 3. 将新数组设置为ArrayList的内部数组，原数组被垃圾回收。
 
+## ArrayList的扩容系数为什么是1.5倍
+数组的扩容仍然是综合考虑时间和空间两个部分，如果每次扩容后的大小都是扩容前的两倍，理论上确实会减少很多的扩容次数，节省了时间上的开销。
+但是由于不清楚后序还将有多少的元素插入，盲目的选择大的扩容系数是不可取的，并且当扩容系数大于等于2的时候，将不能复用此前释放掉的内存，因为此前释放掉的内存一定小于等于将要申请的内存的一半。（1,2,4,8,16,32...）
+而当扩容系数小于2，例如1.5时，已释放的内存、当前内存和将要申请的内存的关系大致如下：
+
+| 扩容次数 | 已释放内存 | 当前内存 | 申请内存 |  
+|------|-------|------|------|
+| 0    | 0     | 10   | 16   |
+| 1    | 10    | 16   | 24   |
+| 2    | 26    | 24   | 36   |
+| 3    | 50    | 36   | 54   |
+| 4    | 86    | 54   | 81   |
+那么可以看到，当进行第四次扩容的时候，已释放掉的内存86就已经大于将要申请的内存81，那么就可以复用之前释放掉的内存。  
+而释放掉的内存可能还是有JVM管理，而并没有归还给操作系统，因此能节省很大一部分的内存和减少开销。  
+而为什么是1.5，是因为可以充分利用位移运算，提高执行效率。
+
 ## 线程安全的集合有哪些
 1. ConcurrentHashMap：线程安全且效率高的哈希表实现，实现了Map接口。
 2. CopyOnWriteArrayList：线程安全的ArrayList，它在写入操作时会复制一份原来的数据，并在复制的数据上进行修改，从而避免并发冲突。
@@ -429,14 +445,89 @@ start、stop、wait/notify、sleep、join、yield、interrupt
 1. 注解驱动方式：开发者在类或者属性上使用注解标识需要依赖注入的类或属性。当应用程序启动时，IOC 容器会扫描应用程序中所有注解，并根据注解信息自动创建依赖对象，并将依赖对象注入到需要依赖的类或属性中。
 2. XML配置方式：开发者在配置文件中声明依赖关系，将依赖对象与被依赖对象的创建和组装过程完全交给 IOC 容器。当应用程序启动时，IOC 容器会从配置文件中读取依赖信息，自动创建依赖对象，并将依赖对象注入到需要依赖的类或属性中。
 
-## BeanFactory和FactoryBean的区别
+## Spring中的Bean创建的生命周期有哪些步骤
+1. 推断构造方法，Spring根据某一个类生成bean对象的时候，如果类里面有多个构造方法，Spring应该怎么去选择构造方法去进行实例化。
+2. 实例化，得到一个对象。
+3. 填充属性，即进行依赖注入。
+4. 初始化。  
+   4.1. 处理Aware回调，bean如果实现了Aware接口，则能在bean中获得相应的Spring容器的资源，例如beanName、ClassLoader、BeanFactory等。  
+   4.2. BeanPostProcessor前置处理阶段，处理@PostConstruct注解。  
+   4.3. 进行初始化，如果bean实现了InitializingBean接口，会执行重写的afterPropertiesSet()方法。  
+   4.4. 执行自定义的initMethod()方法。  
+   4.5. BeanPostProcessor后置处理阶段，例如是否要基于AOP给bean创建代理。
+5. 注册销毁相关的接口。
+6. 使用中。
+7. 如果bean实现了DisposableBean接口，将调用重写的destroy()方法。
+8. 执行自定义的destroy-method方法。
+
+## BeanFactory和FactoryBean和ApplicationContext的区别
 1. BeanFactory：管理Bean的容器，Spring中生成的Bean都是由这个接口的实现来管理的。
 2. FactoryBean：通常是用来创建比较复杂的bean，一般的bean 直接用xml配置即可，但如果一个bean的创建过程中涉及到很多其他的bean 和复杂的逻辑，直接用xml配置比较麻烦，这时可以考虑用FactoryBean，可以隐藏实例化复杂Bean的细节。
+3. ApplicationContext：继承自一些BeanFactory，拥有BeanFactory所有的功能，除此之外还因为继承了其他的类，因此相当于是在BeanFactory的基础上增加了其他的功能，例如国际化、事件发布、获取系统环境变量等。
 
 ## Spring 的单例 Bean 是否有线程安全问题
 当多个用户同时请求一个服务时，容器会给每一个请求分配一个线程，这时多个线程会并发执行该请求对应的业务逻辑，如果业务逻辑有对单例状态的修改（体现为此单例的成员属性），则必须考虑线程安全问题。  
 若每个线程中对全局变量、静态变量只有读操作，而无写操作，那么不会有线程安全问题；若有多个线程同时执行写操作，一般都需要考虑线程同步，否则就可能影响线程安全。  
 在Spring中无状态的Bean适合用单例模式，这样可以共享实例提高性能。有状态的Bean在多线程环境下不安全，一般用Prototype模式或者使用ThreadLocal解决线程安全问题。
+
+## Spring容器的启动流程是怎样的
+1. 首先会进行扫描，扫描得到所有的BeanDefinition对象，并存在一个Map中。
+2. 筛选出非懒加载的单例BeanDefinition进行创建bean，对于多例bean不需要在启动过程中去进行创建，对于多例bean会在每次获取bean时创建。
+3. 利用BeanDefinition创建bean就是bean的创建生命周期，具体可以参考bean的生命周期。
+4. 单例bean创建完成之后，Spring会发布一个容器启动事件。
+5. Spring启动结束。
+
+## Spring中有两个name相同的bean，会报错吗
+1. 如果配置在同一个xml文件中，会报错，发生在解析xml转换为BeanDefinition阶段。
+2. 如果在@Configuration中声明相同name的bean，只会注册第一个声明bean的实例。
+
+## SpringMVC的底层工作流程
+1. 用户发送请求至前端控制器DispatcherServlet。
+2. DispatcherServlet收到请求，调用HandlerMapping寻找Controller。
+3. HandlerMapping找到具体的处理器（根据xml配置或注解配置），生成Controller和对应的拦截器一并返回给DispatcherServlet。
+4. DispatcherServlet调用HandlerAdapter，将Controller传递给HandlerAdapter。
+5. HandlerAdapter经过适配调用具体的处理器（Controller）。
+    - AnnotationMethodHandlerAdapter 主要处理@Controller
+    - HttpRequestHandlerAdapter 主要主要是适配静态资源处理器，静态资源处理器就是实现了HttpRequestHandler接口的处理器，这类处理器的作用是处理通过SpringMVC来访问的静态资源的请求。
+    - SimpleControllerHandlerAdapter 用于处理实现了Controller接口或其子类的处理器。
+    - SimpleServletHandlerAdapter 适配Servlet。
+6. Controller执行完成后返回ModelAndView。
+7. HandlerAdapter将ModelAndView返回给DispatcherServlet。
+8. DispatcherServlet将ModelAndView传给视图解析器。
+9. 视图解析器解析后返回具体的View。
+10. DispatcherServlet根据View进行视图渲染。
+11. DispatcherServlet相应用户。
+
+## SpringBoot中常用注解及其底层实现
+1. @SpringBootApplication：标识一个SpringBoot工程，由三个注解组合：
+   - @SpringBootConfiguration：实际上是一个@Configuration，表示启动类也是一个配置类。
+   - @EnableAutoConfiguration：开启自动配置，加载classPath下SpringFactories中定义的自动配置类，将这些自动加载为配置bean。主要用于加载项目以外的bean。
+   - @ComponentScan：标识扫描路径，默认扫描启动类所在的当前目录。
+2. @Bean注解：得到bean对象。
+3. @Controller、@Service、@Repository、@Autowired等。
+
+## SpringBoot和SpringMVC的区别
+SpringMVC是一套web框架，相比于servlet简化了开发难度。开发任务无需处理整个HttpRequest、IO流，只需要关心业务处理。同时提供了切面能力，可以定义全局异常处理器。  
+而SpringBoot的产生主要是提供了工程开发的便捷性。在SpringMvc工程中，仍然存在很多必要的配置文件和mvc mapping的声明，SpringBoot的约定大于配置的理念简化了很多不必要的配置，做到开箱即用。
+
+## SpringBoot-starter的作用
+1. SpringBoot-starter引入了Spring项目开发中通常所需要的所有相关jar，不用再对各个模块进行一个单独的引用，避免了单独引用可能会有的各种依赖包冲突、版本不适配等问题。
+2. SpringBoot-starter自动配置了各自模块所需要的属性。
+3. 除此之外还有很多三方件和Spring集成的starter，可以省去非常多的配置。
+
+## SpringBoot是如何启动Tomcat的
+1. 首先，SpringBoot在启动时会先创建一个Spring容器。
+2. 在创建Spring容器过程中，会利用@ConditionOnClass技术来判断当前classpath中是否存在Tomcat依赖，如果存在则会生成一个启动Tomcat的Bean。
+3. Spring容器创建完之后，就会获取启动Tomcat的Bean，并创建Tomcat对象，并绑定端口等，然后启动Tomcat。
+
+## SpringBoot中配置文件的加载顺序是怎样的
+优先级从高到低，高优先级的配置覆盖低优先级的配置，所有配置会形成互补配置。
+1. 命令行参数。
+2. Java系统属性，System.getProperties()。
+3. 操作系统环境变量。
+4. jar包外部的application配置文件。
+5. jar包内部的application配置文件。
+6. @Configuration注解类上的@PropertySource。
 
 ## Spring怎么解决循环依赖的问题
 - 构造器注入的循环依赖：Spring处理不了，直接抛出异常。
@@ -466,7 +557,6 @@ singletonFactories： 单例对象工厂map，bean name --> ObjectFactory，单�
 ## 什么是AOP
 面向切面编程，作为面向对象的一种补充，将公共逻辑（事务管理、日志、缓存等）封装成切面，跟业务代码进行分离，可以减少系统的重复代码和降低模块之间的耦合度。切面就是那些与业务无关，但所有业务模块都会调用的公共逻辑。
 
-
 ## Spring AOP和AspectJ AOP的区别
 1. Spring AOP仅支持方法级别的切面，而AspectJ AOP支持更广泛的切面，包括类级别切面、对象级别切面等。
 2. Spring AOP使用基于代理的AOP实现，而AspectJ AOP使用基于字节码的AOP实现。
@@ -479,6 +569,16 @@ singletonFactories： 单例对象工厂map，bean name --> ObjectFactory，单�
 2. CGLIB动态代理：
    使用字节码增强技术来实现，需要引入相关依赖 asm.jar 。如果目标类没有实现接口，那么Spring AOP会选择使用CGLIB来动态代理目标类。CGLIB可以在运行时动态生成类的字节码，动态创建目标类的子类对象，在子类对象中增强目标类。CGLIB是通过继承的方式做的动态代理，因此如果某个类被标记为final，那么它是无法使用CGLIB做动态代理的。
 3. JDK代理在生成代理对象时，需要消耗额外的时间。因为它不仅要生成代理类，还要在运行时动态生成接口的实现类。而CGLIB代理可以直接继承被代理类生成代理对象，因此在生成代理对象时不需要消耗额外的时间。
+
+## Spring中的事务是如何实现的
+1. Spring事务底层是基于数据库事务和AOP机制实现的。
+2. 首先对于使用了@Transactional注解的bean，Spring会创建一个代理对象。
+3. 当调用代理对象的方法时，会先判断该方法是否加了@Transactional注解。
+4. 如果加了，那么则利用事务管理器（TransactionManager）创建一个数据库连接。
+5. 需要把数据库的autocommit属性设置为false，否则每执行完一条sql，事务就自动提交了。
+6. 执行当前的方法，方法中会执行sql。
+7. 执行完方法后，如果没有出现异常就直接提交事务。
+8. 如果出现了异常，根据业务逻辑，判断是进行回滚还是继续提交事务。
 
 ## 事务的传播机制
 1. REQUIRED：如果当前没有事务，就创建一个新事务，如果当前存在事务，就加入该事务，该设置是最常用的默认设置。
@@ -500,10 +600,10 @@ singletonFactories： 单例对象工厂map，bean name --> ObjectFactory，单�
 声明式事务是指将事务的定义和实现与业务逻辑代码完全分离，通过配置的方式来实现事务管理，使得业务逻辑代码与事务管理代码解耦。Spring 中实现声明式事务的方式是基于 AOP。当某一个方法被声明为事务方法时，Spring 会自动为这个方法创建一个事务增强，并将其注入到容器中进行管理，在执行这个被拦截的方法时，事务增强会在方法执行前开启事务，在方法执行后提交事务。如果方法执行出现异常，事务增强会回滚事务，以保证数据的一致性。
 
 ## 声明式事务在哪些情况下会失效
-1. 方法没有被正确地注解：声明式事务只有在方法上正确地使用了@Transactional 注解时才会生效。如果方法没有被正确地注解，事务将不会起作用。
-2. 异常没有被正确处理：如果在Transactional注解所注解的方法中抛出了未被捕获的异常，则事务将失败，所有操作都将被回滚。但是如果异常被捕获并在方法中处理，则事务将会提交。
-3. 数据库不支持事务：有些轻量级数据库，如H2和HSQLDB，可能没有完全实现JTA规范，因此声明式事务可能会失效。
-4. 方法调用不经过代理：如果方法的调用不经过代理对象，则@Transactional注解将不起作用。这种情况可能出现在对象自调用，即在同一对象中调用另一个方法。
+1. 被注解的方法是private的：由于Spring动态代理的底层是通过Cglib来实现的，Cglib是基于父子类来实现的，子类不能重载父类的private方法，所以不能被代理，事务会失效。
+2. 方法调用不经过代理：如果方法的调用不经过代理对象，则@Transactional注解将不起作用，。这种情况可能出现在对象自调用，即在同一对象中调用另一个方法。
+3. 异常没有被正确处理：如果在Transactional注解所注解的方法中抛出了未被捕获的异常，则事务将失败，所有操作都将被回滚。但是如果异常被捕获并在方法中处理，则事务将会提交。
+4. 数据库不支持事务：有些轻量级数据库，如H2和HSQLDB，可能没有完全实现JTA规范，因此声明式事务可能会失效。
 5. 并发问题：当多个事务同时访问共享数据时，可能会出现并发问题。这可能导致事务失败或导致数据不一致。为了避免这些问题，应该在事务中使用悲观锁或乐观锁。
 
 
@@ -665,7 +765,9 @@ Mysql分为Server层和引擎层。
 ## Redis分布式锁底层实现要点
 1. 使用setnx来保证，如果key不存在才能获取到锁，如果key存在，则不能获取到锁。
 2. 利用lua脚本来保证多个redis操作的原子性。
-3. 考虑锁过期的问题，需要一个额外的看门狗定时任务来监听锁是否需要续约。
+3. 考虑锁过期的问题，使用redisson的watch dog机制，在Redisson实例被关闭前，不断的延长锁的有效期，即如果一个拿到锁的线程一直没有完成逻辑，那么看门狗会帮助线程不断的延长锁超时时间，锁不会因为超时而被释放。
+   - watch dog 在当前节点存活时，默认每10s给分布式锁的key续期 30s。
+   - watchDog 只有在未显示指定过期时间时才会生效。
 4. 考虑redis挂掉的情况，采用红锁的方式同时向N/2+1个节点申请锁，都申请到了才证明获取锁成功。
 
 ## Redis主从复制的核心原理
@@ -685,6 +787,18 @@ Mysql分为Server层和引擎层。
 1. 死信队列用来存放没有成功消费的消息，用作消息重试。
 2. 延时队列用来存放需要在指定时间被处理的消息的队列，比如十分钟未支付要取消订单。
 
+
+
+# 排序算法
+https://zhuanlan.zhihu.com/p/42586566
+
+| 排序算法 | 时间复杂度     | 空间复杂度   | 稳定性 |
+|------|-----------|---------|-----|
+| 冒泡排序 | O(n^2)    | O(1)    | 稳定  |
+| 选择排序 | O(n^2)    | O(1)    | 不稳定 |
+| 插入排序 | O(n^2)    | O(1)    | 稳定  |
+| 归并排序 | O(nlongn) | O(n)    | 稳定  |
+| 快速排序 | O(nlongn) | O(logn) | 不稳定 |
 
 
 # C++
