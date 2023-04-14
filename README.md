@@ -144,6 +144,9 @@ HashMap用于存储键值对。HashMap的底层数据结构是数组和链表（
 2. 如果两个对象的hashCode相同，那么不一定是同一个对象
 3. 在map里面，先判断hashCode是否相同，再去调用equals判断对象相同，因此重写了equals方法，一定要以相关联的规则重写hashcode。
 
+## Java 中泛型的实现原理
+https://www.cnblogs.com/robothy/p/13949788.html#:~:text=%E6%B3%9B%E5%9E%8B%E7%9A%84%E5%9F%BA%E6%9C%AC%E5%8E%9F%E7%90%86%20%E6%B3%9B%E5%9E%8B%E6%9C%AC%E8%B4%A8%E6%98%AF%E5%B0%86%E6%95%B0%E6%8D%AE%E7%B1%BB%E5%9E%8B%E5%8F%82%E6%95%B0%E5%8C%96%EF%BC%8C%E5%AE%83%E9%80%9A%E8%BF%87%E6%93%A6%E9%99%A4%E7%9A%84%E6%96%B9%E5%BC%8F%E6%9D%A5%E5%AE%9E%E7%8E%B0%E3%80%82%20%E5%A3%B0%E6%98%8E%E4%BA%86%E6%B3%9B%E5%9E%8B%E7%9A%84%20.java,%E6%BA%90%E4%BB%A3%E7%A0%81%EF%BC%8C%E5%9C%A8%E7%BC%96%E8%AF%91%E7%94%9F%E6%88%90%20.class%20%E6%96%87%E4%BB%B6%E4%B9%8B%E5%90%8E%EF%BC%8C%E6%B3%9B%E5%9E%8B%E7%9B%B8%E5%85%B3%E7%9A%84%E4%BF%A1%E6%81%AF%E5%B0%B1%E6%B6%88%E5%A4%B1%E4%BA%86%E3%80%82%20%E5%8F%AF%E4%BB%A5%E8%AE%A4%E4%B8%BA%EF%BC%8C%E6%BA%90%E4%BB%A3%E7%A0%81%E4%B8%AD%E6%B3%9B%E5%9E%8B%E7%9B%B8%E5%85%B3%E7%9A%84%E4%BF%A1%E6%81%AF%EF%BC%8C%E5%B0%B1%E6%98%AF%E6%8F%90%E4%BE%9B%E7%BB%99%E7%BC%96%E8%AF%91%E5%99%A8%E7%94%A8%E7%9A%84%E3%80%82
+
 ## 泛型中extends和super的区别
 1. <? extends T> 必须是T的子类
 2. <? super S> 必须是S的父类
@@ -800,6 +803,26 @@ https://zhuanlan.zhihu.com/p/129640817
   - 将热key加上前缀或者后缀，把热key的数量从1个变成实例个数，利用分片特性将这n个key分散在不同节点上，这样就可以在访问的时候，采用客户端负载均衡的方式，随机选择一个key进行访问，将访问压力分散到不同的实例中。这个方案有个明显的缺点，就是缓存的维护成本大：假如有n为100，则更新或者删除key的时候需要操作100个key。
   - 利用读写分离，通过主从复制的方式，增加slave节点来实现读请求的负载均衡。这个方案明显的缺点就是使用机器硬抗热key的数据，资源耗费严重；而且引入读写分离架构，增加节点数量，都会增加系统的复杂度降低稳定性。
 
+## 什么是redis的CAP理论
+CAP理论：Consistency、Availability、Partition Tolerance
+- Redis单机模式：实现了数据的一致性Consistency(一致性)
+- Redis哨兵模式：实现了数据的一致性和高可用性 Consistency(一致性)、Availability(可用性)
+- Redis集群模式：实现了分区容忍性和高可用性 Availability(可用性)、Partition Tolerance(分区容错性)
+
+分区容忍性：指分布式系统中的节点被划分为多个区域，每个区域内部可以通信，但是区域之间无法通信，在分布式系统中，分区容忍性必不可少，因为需要总是假设网络是不可靠的。因此，CAP 理论实际上是要在可用性和一致性之间做权衡。
+
+## Redis怎么使用模糊查询
+- keys
+  - 没有 offset、limit 参数，一次性吐出所有满足条件的key。
+  - keys采用遍历算法，复杂度O(n)，容易导致Redis服务卡顿，所有读写 Redis 的其它指令都会被延后甚至会超时报错。Redis 是单线程程序，顺序执行所有指令，其它指令必须等到当前的 keys 指令执行完才可以继续。
+- scan
+  - 基本语法 ```SCAN cursor [MATCH pattern] [COUNT count]```
+  - scan命令的时间复杂度虽然也是O(N)，但它是分次进行的，不会阻塞线程。
+  - scan命令提供了limit参数，可以控制每次返回结果的最大条数。
+  - redis的存储类似于hashmap，底层是一维数组加链表，因此遍历时实际上是对一位数组的遍历，每次返回的游标值也都是这个数组的索引。
+  - scan命令返回的结果有可能重复，因此需要客户端去重。
+
+https://blog.csdn.net/Carson073/article/details/115314234
 
 
 # 消息队列
